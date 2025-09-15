@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+.env*
+*.log
+
+# Build outputs
+/build
+/dist
+.next
+.nuxt
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Other
+*.tmp
+*.temp

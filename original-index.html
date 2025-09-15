@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Interactive Dot Grid Canvas (Infinite)</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+            background: #1a1a1a;
+            color: #ffffff;
+        }
+
+        /* The view window; we draw the infinite tiling grid on this element */
+        .viewport {
+            position: fixed;
+            inset: 0;
+            cursor: grab;
+            overflow: hidden;
+            /* grid styles are set dynamically via JS:
+         background-image, background-size, background-position */
+        }
+
+        .viewport:active {
+            cursor: grabbing;
+        }
+
+        /* World: a transformable layer that can be any size; we don't constrain it. */
+        .world {
+            position: absolute;
+            /* gives us a transform origin at the top-left (0,0) */
+            inset: 0 auto auto 0;
+            transform-origin: 0 0;
+            will-change: transform;
+        }
+
+        .element {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.95);
+            color: #1a1a1a;
+            border-radius: 12px;
+            padding: 24px;
+            /* box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); */
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            min-width: 300px;
+            cursor: default;
+        }
+
+        .element h2 {
+            margin-bottom: 16px;
+            color: #2563eb;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .element h3 {
+            margin-bottom: 12px;
+            color: #374151;
+            font-size: 1.2rem;
+            font-weight: 500;
+        }
+
+        .drag-handle {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 24px;
+            height: 24px;
+            cursor: move;
+            background: rgba(107, 114, 128, 0.2);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s ease;
+        }
+
+        .drag-handle:hover {
+            background: rgba(107, 114, 128, 0.4);
+        }
+
+        .drag-handle::before {
+            content: '⋮⋮';
+            font-size: 12px;
+            color: #6b7280;
+            letter-spacing: -2px;
+            line-height: 1;
+        }
+
+        .element.dragging {
+            box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
+            z-index: 1000;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        th,
+        td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        th {
+            background: #f9fafb;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover {
+            background: #f9fafb;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 500;
+            margin: 8px 8px 8px 0;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            color: #374151;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+            color: #7f1d1d;
+        }
+
+        /* World-space positions for your demo elements */
+        .element-1 {
+            top: 400px;
+            left: 600px;
+        }
+
+        .element-2 {
+            top: 800px;
+            left: 1200px;
+        }
+
+        .element-3 {
+            top: 300px;
+            left: 1600px;
+        }
+
+        .instructions {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+        }
+
+        .status {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="instructions">
+        Middle-click and drag to pan • Scroll to zoom toward cursor • Drag handle (⋮⋮) to move elements
+    </div>
+
+    <div class="status" id="status">Position: (0, 0) • Zoom: 100%</div>
+
+    <div class="viewport" id="viewport">
+        <!-- Transformable "world" layer (formerly your .canvas) -->
+        <div class="world" id="world">
+            <!-- Element 1: User Profile -->
+            <div class="element element-1">
+                <div class="drag-handle"></div>
+                <h2>User Profile</h2>
+                <h3>Account Settings</h3>
+                <p><strong>Name:</strong> Sarah Johnson</p>
+                <p><strong>Email:</strong> sarah@example.com</p>
+                <p><strong>Role:</strong> Project Manager</p>
+                <div style="margin-top: 16px;">
+                    <button class="btn">Edit Profile</button>
+                    <button class="btn btn-secondary">Change Password</button>
+                    <button class="btn btn-danger">Delete Account</button>
+                </div>
+            </div>
+
+            <!-- Element 2: Data Table -->
+            <div class="element element-2">
+                <div class="drag-handle"></div>
+                <h2>Project Statistics</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Project</th>
+                            <th>Status</th>
+                            <th>Progress</th>
+                            <th>Due Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Website Redesign</td>
+                            <td>In Progress</td>
+                            <td>75%</td>
+                            <td>Dec 15, 2024</td>
+                        </tr>
+                        <tr>
+                            <td>Mobile App</td>
+                            <td>Planning</td>
+                            <td>25%</td>
+                            <td>Feb 28, 2025</td>
+                        </tr>
+                        <tr>
+                            <td>API Integration</td>
+                            <td>Complete</td>
+                            <td>100%</td>
+                            <td>Nov 30, 2024</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <button class="btn">View All Projects</button>
+                <button class="btn btn-secondary">Export Data</button>
+            </div>
+
+            <!-- Element 3: Dashboard -->
+            <div class="element element-3">
+                <div class="drag-handle"></div>
+                <h2>Quick Actions</h2>
+                <h3>Dashboard Controls</h3>
+                <p>Manage your workspace and access key features quickly.</p>
+
+                <div style="margin: 20px 0;">
+                    <h4 style="margin-bottom: 8px; color: #6b7280;">Navigation</h4>
+                    <button class="btn">Dashboard</button>
+                    <button class="btn">Analytics</button>
+                    <button class="btn">Settings</button>
+                </div>
+
+                <div style="margin: 20px 0;">
+                    <h4 style="margin-bottom: 8px; color: #6b7280;">Actions</h4>
+                    <button class="btn btn-secondary">Create New</button>
+                    <button class="btn btn-secondary">Import Data</button>
+                    <button class="btn btn-danger">Reset All</button>
+                </div>
+
+                <div style="border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 20px;">
+                    <small style="color: #6b7280;">Last updated: 2 minutes ago</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ----- State -----
+        let isDragging = false;
+        let startX = 0, startY = 0;
+        let translateX = 0, translateY = 0;
+
+        let targetScale = 1;
+        let targetTX = 0, targetTY = 0;
+        let rafId = null;
+        const DAMPING = 0.2; // 0.1 = slower, 0.3 = snappier
+
+        let scale = 1;
+        const MIN_SCALE = 0.05;
+        const MAX_SCALE = 2;
+        const ZOOM_SENSITIVITY = 0.0015;
+
+        // Element dragging state
+        let isDraggingElement = false;
+        let draggedElement = null;
+        let elementStartX = 0, elementStartY = 0;
+        let elementOffsetX = 0, elementOffsetY = 0;
+
+        // Snapping state
+        const SNAP_DISTANCE = 5; // pixels in world coordinates
+        let snapIndicators = { x: null, y: null };
+
+        // Grid (world-space) settings
+        const BASE_GRID_SPACING = 20; // world units (pixels at scale=1)
+        const DOT_RADIUS_PX = 1;      // stays crisp in screen pixels
+
+        const viewport = document.getElementById('viewport');
+        const world = document.getElementById('world');
+        const status = document.getElementById('status');
+
+        // ----- Rendering helpers -----
+        function applyWorldTransform() {
+            world.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+        }
+
+        // Keep the dot grid infinite by tiling on the viewport and shifting with pan/zoom
+        function applyGrid() {
+            const stepPx = BASE_GRID_SPACING * scale;
+
+            const offsetX = ((translateX % stepPx) + stepPx) % stepPx;
+            const offsetY = ((translateY % stepPx) + stepPx) % stepPx;
+
+            // scale dot radius relative to zoom
+            const dotRadius = Math.max(0.5, 1.3 * scale); // tweak factors to taste
+
+            viewport.style.backgroundImage =
+                `radial-gradient(circle, #444 ${dotRadius}px, transparent ${dotRadius}px)`;
+            viewport.style.backgroundSize = `${stepPx}px ${stepPx}px`;
+            viewport.style.backgroundPosition = `${offsetX}px ${offsetY}px`;
+            viewport.style.backgroundRepeat = 'repeat';
+            viewport.style.backgroundColor = '#1a1a1a';
+        }
+
+        function updateUI() {
+            applyWorldTransform();
+            applyGrid();
+            status.textContent =
+                `Position: (${Math.round(translateX)}, ${Math.round(translateY)}) • Zoom: ${Math.round(scale * 100)}%`;
+        }
+
+        function animate() {
+            // Lerp current values toward targets
+            translateX += (targetTX - translateX) * DAMPING;
+            translateY += (targetTY - translateY) * DAMPING;
+            scale += (targetScale - scale) * DAMPING;
+
+            updateUI();
+
+            // Stop when close enough
+            const done =
+                Math.abs(targetTX - translateX) < 0.01 &&
+                Math.abs(targetTY - translateY) < 0.01 &&
+                Math.abs(targetScale - scale) < 0.0001;
+
+            if (!done) {
+                rafId = requestAnimationFrame(animate);
+            } else {
+                rafId = null;
+            }
+        }
+
+        function kickAnimation() {
+            if (rafId == null) rafId = requestAnimationFrame(animate);
+        }
+
+        // ----- Snapping functions -----
+        function getElementBounds(element) {
+            const computedStyle = window.getComputedStyle(element);
+            const left = parseFloat(element.style.left) || parseFloat(computedStyle.left) || 0;
+            const top = parseFloat(element.style.top) || parseFloat(computedStyle.top) || 0;
+            const width = element.offsetWidth;
+            const height = element.offsetHeight;
+            
+            return {
+                left,
+                top,
+                right: left + width,
+                bottom: top + height,
+                width,
+                height
+            };
+        }
+
+        function createSnapIndicator(isVertical, position) {
+            const indicator = document.createElement('div');
+            indicator.style.position = 'absolute';
+            indicator.style.backgroundColor = '#3b82f6';
+            indicator.style.pointerEvents = 'none';
+            indicator.style.zIndex = '9999';
+            
+            if (isVertical) {
+                indicator.style.left = position + 'px';
+                indicator.style.top = '-10000px';
+                indicator.style.width = '1px';
+                indicator.style.height = '20000px';
+            } else {
+                indicator.style.left = '-10000px';
+                indicator.style.top = position + 'px';
+                indicator.style.width = '20000px';
+                indicator.style.height = '1px';
+            }
+            
+            world.appendChild(indicator);
+            return indicator;
+        }
+
+        function applySnapping(x, y, draggedBounds, allElements) {
+            let snappedX = x;
+            let snappedY = y;
+            let snapLineX = null;
+            let snapLineY = null;
+            
+            let minXDist = SNAP_DISTANCE + 1;
+            let minYDist = SNAP_DISTANCE + 1;
+            
+            allElements.forEach(element => {
+                if (element === draggedElement) return;
+                
+                const bounds = getElementBounds(element);
+                
+                // X snapping - check all possible alignments
+                const xAlignments = [
+                    { draggedPos: x, targetPos: bounds.left, snapLine: bounds.left },           // left to left
+                    { draggedPos: x, targetPos: bounds.right, snapLine: bounds.right },       // left to right  
+                    { draggedPos: x + draggedBounds.width, targetPos: bounds.left, snapLine: bounds.left },  // right to left
+                    { draggedPos: x + draggedBounds.width, targetPos: bounds.right, snapLine: bounds.right } // right to right
+                ];
+                
+                xAlignments.forEach(align => {
+                    const dist = Math.abs(align.draggedPos - align.targetPos);
+                    if (dist < SNAP_DISTANCE && dist < minXDist) {
+                        minXDist = dist;
+                        snappedX = x + (align.targetPos - align.draggedPos);
+                        snapLineX = align.snapLine;
+                    }
+                });
+                
+                // Y snapping - check all possible alignments
+                const yAlignments = [
+                    { draggedPos: y, targetPos: bounds.top, snapLine: bounds.top },             // top to top
+                    { draggedPos: y, targetPos: bounds.bottom, snapLine: bounds.bottom },       // top to bottom
+                    { draggedPos: y + draggedBounds.height, targetPos: bounds.top, snapLine: bounds.top },    // bottom to top
+                    { draggedPos: y + draggedBounds.height, targetPos: bounds.bottom, snapLine: bounds.bottom } // bottom to bottom
+                ];
+                
+                yAlignments.forEach(align => {
+                    const dist = Math.abs(align.draggedPos - align.targetPos);
+                    if (dist < SNAP_DISTANCE && dist < minYDist) {
+                        minYDist = dist;
+                        snappedY = y + (align.targetPos - align.draggedPos);
+                        snapLineY = align.snapLine;
+                    }
+                });
+            });
+            
+            return {
+                x: snappedX,
+                y: snappedY,
+                snapLineX,
+                snapLineY
+            };
+        }
+
+        function updateSnapIndicators(snapLineX, snapLineY) {
+            // Remove old indicators
+            if (snapIndicators.x) {
+                snapIndicators.x.remove();
+                snapIndicators.x = null;
+            }
+            if (snapIndicators.y) {
+                snapIndicators.y.remove();
+                snapIndicators.y = null;
+            }
+            
+            // Create new indicators
+            if (snapLineX !== null) {
+                snapIndicators.x = createSnapIndicator(true, snapLineX);
+            }
+            if (snapLineY !== null) {
+                snapIndicators.y = createSnapIndicator(false, snapLineY);
+            }
+        }
+
+        function hideSnapIndicators() {
+            if (snapIndicators.x) {
+                snapIndicators.x.remove();
+                snapIndicators.x = null;
+            }
+            if (snapIndicators.y) {
+                snapIndicators.y.remove();
+                snapIndicators.y = null;
+            }
+        }
+
+        // ----- Element dragging -----
+        function setupElementDragging() {
+            const elements = document.querySelectorAll('.element');
+            
+            elements.forEach(element => {
+                const dragHandle = element.querySelector('.drag-handle');
+                
+                // Prevent middle-click dragging on elements
+                element.addEventListener('mousedown', (e) => {
+                    if (e.button === 1) {
+                        e.stopPropagation();
+                        e.preventDefault();
+                    }
+                });
+                
+                dragHandle.addEventListener('mousedown', (e) => {
+                    if (e.button !== 0) return; // Only left mouse button
+                    
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    isDraggingElement = true;
+                    draggedElement = element;
+                    
+                    const rect = element.getBoundingClientRect();
+                    const worldRect = world.getBoundingClientRect();
+                    
+                    // Calculate mouse position relative to world coordinates
+                    const mouseWorldX = (e.clientX - worldRect.left - translateX) / scale;
+                    const mouseWorldY = (e.clientY - worldRect.top - translateY) / scale;
+                    
+                    // Get current element position in world coordinates
+                    // Check computed style first, then inline style as fallback
+                    const computedStyle = window.getComputedStyle(element);
+                    const elementWorldX = parseFloat(element.style.left) || parseFloat(computedStyle.left) || 0;
+                    const elementWorldY = parseFloat(element.style.top) || parseFloat(computedStyle.top) || 0;
+                    
+                    // Store offset from mouse to element's top-left corner
+                    elementOffsetX = mouseWorldX - elementWorldX;
+                    elementOffsetY = mouseWorldY - elementWorldY;
+                    
+                    element.classList.add('dragging');
+                });
+            });
+        }
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDraggingElement && draggedElement) {
+                e.preventDefault();
+                
+                const worldRect = world.getBoundingClientRect();
+                
+                // Calculate new position in world coordinates
+                const mouseWorldX = (e.clientX - worldRect.left - translateX) / scale;
+                const mouseWorldY = (e.clientY - worldRect.top - translateY) / scale;
+                
+                let newX = mouseWorldX - elementOffsetX;
+                let newY = mouseWorldY - elementOffsetY;
+                
+                // Get all elements for snapping
+                const allElements = document.querySelectorAll('.element');
+                const draggedBounds = {
+                    width: draggedElement.offsetWidth,
+                    height: draggedElement.offsetHeight
+                };
+                
+                // Apply snapping
+                const snapped = applySnapping(newX, newY, draggedBounds, allElements);
+                newX = snapped.x;
+                newY = snapped.y;
+                
+                // Update snap indicators
+                updateSnapIndicators(snapped.snapLineX, snapped.snapLineY);
+                
+                draggedElement.style.left = newX + 'px';
+                draggedElement.style.top = newY + 'px';
+                
+                return;
+            }
+            
+            // Canvas panning logic
+            if (!isDragging) return;
+            translateX = targetTX = e.clientX - startX;
+            translateY = targetTY = e.clientY - startY;
+            updateUI();
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (isDraggingElement) {
+                isDraggingElement = false;
+                if (draggedElement) {
+                    draggedElement.classList.remove('dragging');
+                    draggedElement = null;
+                }
+                hideSnapIndicators();
+                return;
+            }
+            
+            if (e.button === 1) {
+                isDragging = false;
+                world.style.transition = 'transform 0.1s ease-out';
+            }
+        });
+
+        // ----- Input: pan (middle mouse) -----
+        viewport.addEventListener('mousedown', (e) => {
+            if (e.button === 1 && !isDraggingElement) {
+                e.preventDefault();
+                isDragging = true;
+                startX = e.clientX - translateX;
+                startY = e.clientY - translateY;
+                world.style.transition = 'none';
+            }
+        });
+
+        // Prevent autoscroll/context menu on middle click
+        viewport.addEventListener('contextmenu', (e) => { if (e.button === 1) e.preventDefault(); });
+
+        // ----- Input: zoom towards cursor -----
+        viewport.addEventListener('wheel', (e) => {
+            if (isDraggingElement) return;
+            
+            e.preventDefault();
+
+            // Normalize delta for mouse vs trackpad (pixels vs lines/pages)
+            const deltaY = (e.deltaMode === 1) ? e.deltaY * 16
+                : (e.deltaMode === 2) ? e.deltaY * 800
+                    : e.deltaY;
+
+            const rect = viewport.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            // Pre-zoom world coords under cursor (in screen pixels)
+            const worldX = (mouseX - targetTX);
+            const worldY = (mouseY - targetTY);
+
+            // Compute *target* zoom (don't apply directly)
+            const zoom = Math.exp(-deltaY * ZOOM_SENSITIVITY); // smooth curve
+            const newTargetScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, targetScale * zoom));
+            const scaleFactor = newTargetScale / targetScale;
+
+            // Re-anchor pan so cursor stays fixed while zooming
+            targetTX = mouseX - worldX * scaleFactor;
+            targetTY = mouseY - worldY * scaleFactor;
+            targetScale = newTargetScale;
+
+            // Start/continue the easing animation
+            kickAnimation();
+        }, { passive: false });
+
+        // Initialize
+        setupElementDragging();
+        updateUI();
+    </script>
+</body>
+
+</html>
