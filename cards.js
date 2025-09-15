@@ -68,7 +68,7 @@ class CardManager {
             x: data.x || 0,
             y: data.y || 0,
             width: data.width || 300,
-            height: data.height !== undefined ? data.height : 'auto',
+            height: data.height !== undefined ? data.height : 'auto', // Default to auto
             content: data.content || '<p>New card content...</p>',
             ...data
         };
@@ -87,14 +87,14 @@ class CardManager {
     
     createElement(cardData) {
         const card = document.createElement('div');
-        card.className = 'card';
+        card.className = 'card ql-container ql-snow';
         card.dataset.cardId = cardData.id;
         card.style.left = `${cardData.x}px`;
         card.style.top = `${cardData.y}px`;
         card.style.width = `${cardData.width}px`;
         
-        // Handle height - 'auto' or specific pixel value
-        if (cardData.height === 'auto') {
+        // Handle height - auto or specific value
+        if (cardData.height === 'auto' || cardData.height === undefined) {
             card.style.height = 'auto';
         } else {
             card.style.height = `${cardData.height}px`;
@@ -102,7 +102,7 @@ class CardManager {
         
         card.innerHTML = `
             <div class="drag-handle"></div>
-            <div class="card-content">${cardData.content}</div>
+            <div class="card-content ql-editor">${cardData.content}</div>
         `;
         
         return card;
@@ -167,8 +167,8 @@ class CardManager {
         const duplicateData = {
             ...originalCard,
             id: this.nextId++,
-            x: originalCard.x + 50, // Offset by 50px
-            y: originalCard.y + 50  // Offset by 50px
+            x: originalCard.x + 20,
+            y: originalCard.y + 20
         };
         
         const newCard = this.createCard(duplicateData);
@@ -282,9 +282,22 @@ class CardManager {
         for (const [id, cardData] of this.cards) {
             if (id === draggedCardData.id) continue;
             
-            // Get actual height for snapping calculations
-            const draggedHeight = this.getCardActualHeight(draggedCardData);
-            const targetHeight = this.getCardActualHeight(cardData);
+            // Get actual height for snapping (auto height cards need DOM measurement)
+            let cardHeight = cardData.height;
+            if (cardHeight === 'auto') {
+                const element = this.world.world.querySelector(`[data-card-id="${id}"]`);
+                if (element) {
+                    cardHeight = element.offsetHeight;
+                }
+            }
+            
+            let draggedHeight = draggedCardData.height;
+            if (draggedHeight === 'auto') {
+                const element = this.world.world.querySelector(`[data-card-id="${draggedCardData.id}"]`);
+                if (element) {
+                    draggedHeight = element.offsetHeight;
+                }
+            }
             
             // X snapping - check all possible alignments
             const xAlignments = [
@@ -303,12 +316,12 @@ class CardManager {
                 }
             });
             
-            // Y snapping - check all possible alignments using actual heights
+            // Y snapping - check all possible alignments
             const yAlignments = [
                 { draggedPos: y, targetPos: cardData.y, snapLine: cardData.y },             // top to top
-                { draggedPos: y, targetPos: cardData.y + targetHeight, snapLine: cardData.y + targetHeight },       // top to bottom
+                { draggedPos: y, targetPos: cardData.y + cardHeight, snapLine: cardData.y + cardHeight },       // top to bottom
                 { draggedPos: y + draggedHeight, targetPos: cardData.y, snapLine: cardData.y },    // bottom to top
-                { draggedPos: y + draggedHeight, targetPos: cardData.y + targetHeight, snapLine: cardData.y + targetHeight } // bottom to bottom
+                { draggedPos: y + draggedHeight, targetPos: cardData.y + cardHeight, snapLine: cardData.y + cardHeight } // bottom to bottom
             ];
             
             yAlignments.forEach(align => {
@@ -327,19 +340,6 @@ class CardManager {
             snapLineX,
             snapLineY
         };
-    }
-    
-    getCardActualHeight(cardData) {
-        if (cardData.height === 'auto') {
-            // For auto height, try to get actual height from DOM element
-            const element = this.world.world.querySelector(`[data-card-id="${cardData.id}"]`);
-            if (element) {
-                return element.offsetHeight;
-            }
-            // Fallback to minimum height
-            return 100;
-        }
-        return cardData.height;
     }
     
     updateSnapIndicators(snapLineX, snapLineY) {
@@ -405,7 +405,7 @@ class CardManager {
         
         const newCard = this.createCard({
             x: centerX - 150, // Center the 300px wide card
-            y: centerY - 75,  // Center the card vertically
+            y: centerY - 75,  // Approximate center for auto-height card
             width: 300,
             height: 'auto',
             content: '<h2>New Card</h2><p>Double-click to edit this card content...</p>'

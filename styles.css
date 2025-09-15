@@ -34,27 +34,28 @@ body {
 
 /* Card styles */
 .card {
-    position: absolute;
+    position: absolute !important;
     background: rgba(255, 255, 255, 0.95);
     color: #1a1a1a;
     border-radius: 12px;
-    padding: 20px;
+    padding: 5px;
     backdrop-filter: blur(10px);
     border: 2px solid transparent;
     min-width: 200px;
     min-height: 100px;
     cursor: pointer;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    text-rendering: geometricPrecision
 }
 
 .card:hover {
     border-color: rgba(59, 130, 246, 0.3);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
 .card.active {
     border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.9);
 }
 
 .card.dragging {
@@ -66,62 +67,8 @@ body {
 .card-content {
     min-height: 60px;
     word-wrap: break-word;
-}
-
-.card-content h1, .card-content h2, .card-content h3,
-.card-content h4, .card-content h5, .card-content h6 {
-    margin: 0 0 12px 0;
-    /* Removed fixed color to allow WYSIWYG color control */
-}
-
-.card-content p {
-    margin: 0 0 12px 0;
-    line-height: 1.6;
-}
-
-.card-content ul, .card-content ol {
-    margin: 0 0 12px 16px;
-}
-
-.card-content li {
-    margin: 4px 0;
-}
-
-.card-content blockquote {
-    border-left: 4px solid #e5e7eb;
-    padding-left: 16px;
-    margin: 16px 0;
-    font-style: italic;
-    color: #6b7280;
-}
-
-.card-content strong {
-    font-weight: 600;
-}
-
-.card-content em {
-    font-style: italic;
-}
-
-.card-content code {
-    background: #f3f4f6;
-    padding: 2px 4px;
-    border-radius: 4px;
-    font-family: 'Monaco', 'Menlo', monospace;
-    font-size: 0.9em;
-}
-
-.card-content pre {
-    background: #f3f4f6;
-    padding: 12px;
-    border-radius: 6px;
-    overflow-x: auto;
-    margin: 12px 0;
-}
-
-.card-content pre code {
-    background: none;
-    padding: 0;
+    user-select: none;
+    text-rendering: geometricPrecision
 }
 
 /* Drag handle */
@@ -426,7 +373,7 @@ body {
     position: absolute;
     background: #3b82f6;
     pointer-events: none;
-    z-index: 999;
+    z-index: 9999;
 }
 
 .snap-indicator.vertical {
@@ -472,209 +419,7 @@ body {
     100% { transform: rotate(360deg); }
 }
 
-/* Quill editor light theme - Enhanced smooth styling */
-.ql-editor {
-    min-height: 200px;
-    font-family: inherit;
-    background: rgba(255, 255, 255, 0.98);
-    color: #1a1a1a;
-    border-radius: 0 0 8px 8px;
-    border: none;
-    padding: 16px;
-    line-height: 1.6;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
-}
 
-.ql-editor.ql-blank::before {
-    color: #9ca3af;
-    font-style: italic;
-    opacity: 0.7;
-}
-
-.ql-toolbar.ql-snow {
-    border: 1px solid rgba(0, 0, 0, 0.08);
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.98) 100%);
-    border-radius: 8px 8px 0 0;
-    border-bottom: none;
-    padding: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-}
-
-.ql-toolbar.ql-snow .ql-formats {
-    margin-right: 12px;
-}
-
-.ql-toolbar.ql-snow button {
-    border-radius: 4px;
-    margin: 1px;
-    padding: 6px;
-    transition: all 0.2s ease;
-}
-
-.ql-toolbar.ql-snow button:hover {
-    background: rgba(59, 130, 246, 0.08);
-}
-
-.ql-toolbar.ql-snow .ql-stroke {
-    stroke: #4b5563;
-    transition: stroke 0.2s ease;
-}
-
-.ql-toolbar.ql-snow .ql-fill {
-    fill: #4b5563;
-    transition: fill 0.2s ease;
-}
-
-.ql-toolbar.ql-snow .ql-picker-label {
-    color: #4b5563;
-    border-radius: 4px;
-    padding: 4px 8px;
-    transition: all 0.2s ease;
-}
-
-.ql-toolbar.ql-snow .ql-picker-label:hover {
-    color: #1f2937;
-    background: rgba(59, 130, 246, 0.08);
-}
-
-.ql-toolbar.ql-snow button:hover {
-    color: #1f2937;
-}
-
-.ql-toolbar.ql-snow button:hover .ql-stroke {
-    stroke: #1f2937;
-}
-
-.ql-toolbar.ql-snow button:hover .ql-fill {
-    fill: #1f2937;
-}
-
-.ql-toolbar.ql-snow button.ql-active {
-    color: #3b82f6;
-    background: rgba(59, 130, 246, 0.12);
-}
-
-.ql-toolbar.ql-snow button.ql-active .ql-stroke {
-    stroke: #3b82f6;
-}
-
-.ql-toolbar.ql-snow button.ql-active .ql-fill {
-    fill: #3b82f6;
-}
-
-.ql-container.ql-snow {
-    border: 1px solid rgba(0, 0, 0, 0.08);
-    border-top: none;
-    border-radius: 0 0 8px 8px;
-    background: rgba(255, 255, 255, 0.98);
-    height: 100% !important;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-}
-
-.ql-snow .ql-tooltip {
-    background: rgba(255, 255, 255, 0.98);
-    border: 1px solid rgba(0, 0, 0, 0.12);
-    color: #1a1a1a;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
-    border-radius: 8px;
-    backdrop-filter: blur(10px);
-}
-
-.ql-snow .ql-tooltip input[type=text] {
-    background: rgba(255, 255, 255, 0.95);
-    border: 1px solid rgba(0, 0, 0, 0.15);
-    color: #1a1a1a;
-    border-radius: 6px;
-    padding: 8px 12px;
-    transition: all 0.2s ease;
-}
-
-.ql-snow .ql-tooltip input[type=text]:focus {
-    border-color: #3b82f6;
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-.ql-picker-options {
-    background: rgba(255, 255, 255, 0.98) !important;
-    border: 1px solid rgba(0, 0, 0, 0.12) !important;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12) !important;
-    border-radius: 8px !important;
-    backdrop-filter: blur(10px) !important;
-    padding: 8px !important;
-}
-
-.ql-picker-item {
-    color: #4b5563 !important;
-    padding: 6px 12px !important;
-    border-radius: 4px !important;
-    margin: 2px 0 !important;
-    transition: all 0.2s ease !important;
-}
-
-.ql-picker-item:hover {
-    background: rgba(59, 130, 246, 0.08) !important;
-    color: #1f2937 !important;
-}
-
-.ql-picker-item.ql-selected {
-    color: #3b82f6 !important;
-    background: rgba(59, 130, 246, 0.12) !important;
-}
-
-/* Enhanced color picker styling */
-.ql-color-picker .ql-picker-item {
-    border: 1px solid rgba(0, 0, 0, 0.08) !important;
-    border-radius: 4px !important;
-    margin: 2px !important;
-    transition: all 0.2s ease !important;
-    padding: 4px !important;
-}
-
-.ql-color-picker .ql-picker-item:hover {
-    transform: scale(1.1) !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
-}
-
-.ql-snow .ql-color-picker .ql-picker-item.ql-selected {
-    border-color: #3b82f6 !important;
-    border-width: 2px !important;
-    transform: scale(1.05) !important;
-}
-
-.ql-snow .ql-picker.ql-expanded .ql-picker-label {
-    border-color: #3b82f6;
-    background: rgba(59, 130, 246, 0.08);
-}
-
-.ql-snow .ql-picker.ql-expanded .ql-picker-options {
-    border-color: #3b82f6;
-}
-
-/* Custom color input styling */
-.ql-color .ql-picker-item.ql-custom-color {
-    position: relative;
-    width: 24px !important;
-    height: 24px !important;
-    border: 2px solid #e5e7eb !important;
-    border-radius: 4px !important;
-    background: linear-gradient(45deg, 
-        #ff0000 0%, #ff8000 14%, #ffff00 28%, 
-        #80ff00 42%, #00ff00 57%, #00ff80 71%, 
-        #00ffff 85%, #0080ff 100%) !important;
-}
-
-.ql-color .ql-picker-item.ql-custom-color::after {
-    content: '+';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: white;
-    font-weight: bold;
-    font-size: 12px;
-    text-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
-}
 
 /* Hide scrollbars but keep functionality */
 .world {
