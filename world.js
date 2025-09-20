@@ -91,7 +91,7 @@ class World {
             const worldY = (mouseY - this.targetTY);
             
             // Compute target zoom
-            const zoom = Math.exp(-deltaY * this.ZOOM_SENSITIVITY);
+            const zoom = Math.exp(deltaY * this.ZOOM_SENSITIVITY);
             const newTargetScale = Math.min(this.MAX_SCALE, Math.max(this.MIN_SCALE, this.targetScale * zoom));
             const scaleFactor = newTargetScale / this.targetScale;
             

@@ -1,4 +1,4 @@
-// Card management - handles card creation, dragging, and interaction
+// Card management - handles card creation, dragging, and interaction with multi-select and snap relationships
 class CardManager {
     constructor(world) {
         this.world = world;
@@ -6,10 +6,18 @@ class CardManager {
         this.nextId = 1;
         this.activeCard = null;
         
+        // Multi-selection
+        this.selectedCards = new Set();
+        this.isMultiSelecting = false;
+        
         // Dragging state
         this.isDraggingCard = false;
         this.draggedCard = null;
         this.dragOffset = { x: 0, y: 0 };
+        this.multiDragOffsets = new Map(); // For multi-selection dragging
+        
+        // Undo/Redo tracking
+        this.dragStartPositions = new Map(); // Track positions at start of drag
         
         // Snapping
         this.SNAP_DISTANCE = 5; // pixels in world coordinates
@@ -20,6 +28,57 @@ class CardManager {
     
     init() {
         this.setupEventListeners();
+        this.setupCtrlKeyTracking();
+    }
+    
+    setupCtrlKeyTracking() {
+        // Track Ctrl key state globally
+        this.isCtrlPressed = false;
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                this.isCtrlPressed = true;
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            if (!e.ctrlKey && !e.metaKey) {
+                this.isCtrlPressed = false;
+                // Clear multi-selection when Ctrl is released
+                this.clearMultiSelection();
+            }
+        });
+        
+        // Handle window focus loss (Ctrl might be released outside window)
+        window.addEventListener('blur', () => {
+            this.isCtrlPressed = false;
+            this.clearMultiSelection();
+        });
+    }
+    
+    clearMultiSelection() {
+        // Keep only the active card selected, remove selected styling from others
+        if (this.selectedCards.size > 1) {
+            this.selectedCards.forEach(cardId => {
+                if (cardId !== this.activeCard) {
+                    const element = this.world.world.querySelector(`[data-card-id="${cardId}"]`);
+                    if (element) {
+                        element.classList.remove('selected');
+                    }
+                }
+            });
+            
+            // Clear the selectedCards set and only keep the active card
+            this.selectedCards.clear();
+            if (this.activeCard) {
+                this.selectedCards.add(this.activeCard);
+                // Make sure active card still has proper styling
+                const activeElement = this.world.world.querySelector(`[data-card-id="${this.activeCard}"]`);
+                if (activeElement) {
+                    activeElement.classList.add('active', 'selected');
+                }
+            }
+        }
     }
     
     setupEventListeners() {
@@ -27,7 +86,22 @@ class CardManager {
         this.world.world.addEventListener('dblclick', (e) => {
             const card = e.target.closest('.card');
             if (card && !this.isDraggingCard) {
-                this.selectCard(card.dataset.cardId);
+                this.selectCard(card.dataset.cardId, false); // Single select on double-click
+            }
+        });
+        
+        // Card single-click for selection
+        this.world.world.addEventListener('click', (e) => {
+            const card = e.target.closest('.card');
+            if (card) {
+                e.preventDefault();
+                e.stopPropagation();
+                // Only allow multi-select if Ctrl is actively pressed
+                const isMultiSelect = this.isCtrlPressed;
+                this.selectCard(card.dataset.cardId, isMultiSelect);
+            } else if (!e.target.closest('.sidebar')) {
+                // Clicked on empty space - clear selection
+                this.clearSelection();
             }
         });
         
@@ -42,6 +116,15 @@ class CardManager {
                 if (dragHandle || (card && !cardContent)) {
                     e.preventDefault();
                     e.stopPropagation();
+                    
+                    const cardId = parseInt(card.dataset.cardId);
+                    
+                    // If card is not selected, select it (considering ctrl)
+                    if (!this.selectedCards.has(cardId)) {
+                        const isMultiSelect = this.isCtrlPressed;
+                        this.selectCard(cardId, isMultiSelect);
+                    }
+                    
                     this.startDragging(card, e);
                 }
             }
@@ -68,7 +151,7 @@ class CardManager {
             x: data.x || 0,
             y: data.y || 0,
             width: data.width || 300,
-            height: data.height !== undefined ? data.height : 'auto', // Default to auto
+            height: data.height !== undefined ? data.height : 'auto',
             content: data.content || '<p>New card content...</p>',
             ...data
         };
@@ -112,18 +195,41 @@ class CardManager {
         const cardData = this.cards.get(id);
         if (!cardData) return;
         
+        // Track property changes for undo/redo
+        const oldData = { ...cardData };
+        
         Object.assign(cardData, updates);
         
         const element = this.world.world.querySelector(`[data-card-id="${id}"]`);
         if (element) {
             if (updates.x !== undefined) element.style.left = `${cardData.x}px`;
             if (updates.y !== undefined) element.style.top = `${cardData.y}px`;
-            if (updates.width !== undefined) element.style.width = `${cardData.width}px`;
+            if (updates.width !== undefined) {
+                element.style.width = `${cardData.width}px`;
+                
+                // Save resize state for undo/redo if width changed significantly
+                if (Math.abs(oldData.width - cardData.width) > 5 && window.undoRedoManager) {
+                    window.undoRedoManager.saveState('resize_card', {
+                        cardId: id,
+                        oldWidth: oldData.width,
+                        newWidth: cardData.width
+                    });
+                }
+            }
             if (updates.height !== undefined) {
                 if (cardData.height === 'auto') {
                     element.style.height = 'auto';
                 } else {
                     element.style.height = `${cardData.height}px`;
+                }
+                
+                // Save resize state for undo/redo if height changed significantly
+                if (oldData.height !== cardData.height && window.undoRedoManager) {
+                    window.undoRedoManager.saveState('resize_card', {
+                        cardId: id,
+                        oldHeight: oldData.height,
+                        newHeight: cardData.height
+                    });
                 }
             }
             if (updates.content !== undefined) {
@@ -144,6 +250,7 @@ class CardManager {
         }
         
         this.cards.delete(id);
+        this.selectedCards.delete(id);
         
         // Close sidebar if this was the active card
         if (this.activeCard === id) {
@@ -179,31 +286,93 @@ class CardManager {
         }
         
         // Select the new card
-        this.selectCard(newCard.id);
+        this.selectCard(newCard.id, false);
         
         return newCard;
     }
     
-    selectCard(id) {
-        // Deselect previous card
-        if (this.activeCard) {
-            const prevElement = this.world.world.querySelector(`[data-card-id="${this.activeCard}"]`);
-            if (prevElement) {
-                prevElement.classList.remove('active');
+    selectCard(id, isMultiSelect = false) {
+        const cardId = parseInt(id);
+        
+        if (isMultiSelect) {
+            // Multi-select mode
+            if (this.selectedCards.has(cardId)) {
+                // Deselect if already selected
+                this.selectedCards.delete(cardId);
+                const element = this.world.world.querySelector(`[data-card-id="${cardId}"]`);
+                if (element) {
+                    element.classList.remove('selected', 'active');
+                }
+                
+                // If this was the active card, make another selected card active
+                if (this.activeCard === cardId) {
+                    const remainingSelected = Array.from(this.selectedCards);
+                    if (remainingSelected.length > 0) {
+                        this.activeCard = remainingSelected[0];
+                        const newActiveElement = this.world.world.querySelector(`[data-card-id="${this.activeCard}"]`);
+                        if (newActiveElement) {
+                            newActiveElement.classList.add('active');
+                        }
+                    } else {
+                        this.activeCard = null;
+                    }
+                }
+            } else {
+                // Add to selection
+                this.selectedCards.add(cardId);
+                const element = this.world.world.querySelector(`[data-card-id="${cardId}"]`);
+                if (element) {
+                    element.classList.add('selected');
+                }
+                
+                // Remove active from previous active card
+                if (this.activeCard && this.activeCard !== cardId) {
+                    const prevActiveElement = this.world.world.querySelector(`[data-card-id="${this.activeCard}"]`);
+                    if (prevActiveElement) {
+                        prevActiveElement.classList.remove('active');
+                    }
+                }
+                
+                // Make this card the new active card
+                this.activeCard = cardId;
+                const element2 = this.world.world.querySelector(`[data-card-id="${cardId}"]`);
+                if (element2) {
+                    element2.classList.add('active');
+                }
+            }
+        } else {
+            // Single select mode - clear previous selection
+            this.clearSelection();
+            this.selectedCards.add(cardId);
+            this.activeCard = cardId;
+            
+            const element = this.world.world.querySelector(`[data-card-id="${cardId}"]`);
+            if (element) {
+                element.classList.add('active', 'selected');
             }
         }
         
-        // Select new card
-        this.activeCard = parseInt(id);
-        const element = this.world.world.querySelector(`[data-card-id="${id}"]`);
-        if (element) {
-            element.classList.add('active');
-        }
-        
-        // Open sidebar with card data
-        if (window.sidebar) {
+        // Open sidebar with active card data
+        if (this.activeCard && window.sidebar) {
             const cardData = this.cards.get(this.activeCard);
             window.sidebar.open(cardData);
+        }
+    }
+    
+    clearSelection() {
+        // Remove visual selection from all cards
+        this.selectedCards.forEach(cardId => {
+            const element = this.world.world.querySelector(`[data-card-id="${cardId}"]`);
+            if (element) {
+                element.classList.remove('active', 'selected');
+            }
+        });
+        
+        this.selectedCards.clear();
+        this.activeCard = null;
+        
+        if (window.sidebar) {
+            window.sidebar.close();
         }
     }
     
@@ -214,15 +383,61 @@ class CardManager {
         // Calculate world coordinates immediately without using getBoundingClientRect
         const mouseWorldPos = this.world.screenToWorld(event.clientX, event.clientY);
         
-        // Get current card position directly from data
         const cardId = parseInt(cardElement.dataset.cardId);
-        const cardData = this.cards.get(cardId);
         
-        // Store offset from mouse to card's top-left corner
-        this.dragOffset.x = mouseWorldPos.x - cardData.x;
-        this.dragOffset.y = mouseWorldPos.y - cardData.y;
+        // Save starting positions for undo/redo
+        this.dragStartPositions.clear();
         
-        cardElement.classList.add('dragging');
+        // Setup drag offsets for all selected cards
+        this.multiDragOffsets.clear();
+        
+        if (this.selectedCards.has(cardId)) {
+            // Dragging a selected card - drag all selected cards
+            const cardIds = Array.from(this.selectedCards);
+            const startPositions = {};
+            
+            this.selectedCards.forEach(selectedId => {
+                const selectedCard = this.cards.get(selectedId);
+                if (selectedCard) {
+                    // Save starting position for undo/redo
+                    startPositions[selectedId] = { x: selectedCard.x, y: selectedCard.y };
+                    this.dragStartPositions.set(selectedId, { x: selectedCard.x, y: selectedCard.y });
+                    
+                    this.multiDragOffsets.set(selectedId, {
+                        x: mouseWorldPos.x - selectedCard.x,
+                        y: mouseWorldPos.y - selectedCard.y
+                    });
+                    
+                    const selectedElement = this.world.world.querySelector(`[data-card-id="${selectedId}"]`);
+                    if (selectedElement) {
+                        selectedElement.classList.add('dragging');
+                    }
+                }
+            });
+            
+            // Save drag state for undo/redo
+            if (window.undoRedoManager) {
+                const operation = cardIds.length > 1 ? 'multi_card_move' : 'card_move';
+                window.undoRedoManager.saveDragState(operation, cardIds, startPositions);
+            }
+        } else {
+            // Dragging a non-selected card
+            const cardData = this.cards.get(cardId);
+            
+            // Save starting position for undo/redo
+            this.dragStartPositions.set(cardId, { x: cardData.x, y: cardData.y });
+            
+            this.dragOffset.x = mouseWorldPos.x - cardData.x;
+            this.dragOffset.y = mouseWorldPos.y - cardData.y;
+            cardElement.classList.add('dragging');
+            
+            // Save drag state for undo/redo
+            if (window.undoRedoManager) {
+                const startPositions = {};
+                startPositions[cardId] = { x: cardData.x, y: cardData.y };
+                window.undoRedoManager.saveDragState('card_move', [cardId], startPositions);
+            }
+        }
     }
     
     updateCardDrag(event) {
@@ -230,46 +445,108 @@ class CardManager {
         
         // Get mouse position in world coordinates immediately
         const mouseWorldPos = this.world.screenToWorld(event.clientX, event.clientY);
+        const draggedCardId = parseInt(this.draggedCard.dataset.cardId);
         
-        let newX = mouseWorldPos.x - this.dragOffset.x;
-        let newY = mouseWorldPos.y - this.dragOffset.y;
-        
-        const cardId = parseInt(this.draggedCard.dataset.cardId);
-        const cardData = this.cards.get(cardId);
-        
-        // Apply snapping
-        const snapped = this.applySnapping(newX, newY, cardData);
-        newX = snapped.x;
-        newY = snapped.y;
-        
-        // Update snap indicators
-        this.updateSnapIndicators(snapped.snapLineX, snapped.snapLineY);
-        
-        // Update position immediately in DOM and data
-        this.draggedCard.style.left = `${newX}px`;
-        this.draggedCard.style.top = `${newY}px`;
-        cardData.x = newX;
-        cardData.y = newY;
+        if (this.multiDragOffsets.size > 0) {
+            // Multi-card dragging
+            let snapX = null, snapY = null;
+            let snapLineX = null, snapLineY = null;
+            
+            // Use the dragged card as the reference for snapping
+            const draggedOffset = this.multiDragOffsets.get(draggedCardId);
+            if (draggedOffset) {
+                const draggedCard = this.cards.get(draggedCardId);
+                const newX = mouseWorldPos.x - draggedOffset.x;
+                const newY = mouseWorldPos.y - draggedOffset.y;
+                
+                // Calculate snap for the dragged card
+                const snapped = this.applySnapping(newX, newY, draggedCard, this.selectedCards);
+                snapX = snapped.x;
+                snapY = snapped.y;
+                snapLineX = snapped.snapLineX;
+                snapLineY = snapped.snapLineY;
+                
+                // Calculate offset from original position
+                const deltaX = snapX - newX;
+                const deltaY = snapY - newY;
+                
+                // Update all selected cards
+                this.multiDragOffsets.forEach((offset, cardId) => {
+                    const cardData = this.cards.get(cardId);
+                    const element = this.world.world.querySelector(`[data-card-id="${cardId}"]`);
+                    
+                    if (cardData && element) {
+                        const cardNewX = mouseWorldPos.x - offset.x + deltaX;
+                        const cardNewY = mouseWorldPos.y - offset.y + deltaY;
+                        
+                        element.style.left = `${cardNewX}px`;
+                        element.style.top = `${cardNewY}px`;
+                        cardData.x = cardNewX;
+                        cardData.y = cardNewY;
+                    }
+                });
+            }
+            
+            // Update snap indicators
+            this.updateSnapIndicators(snapLineX, snapLineY);
+        } else {
+            // Single card dragging
+            const cardId = parseInt(this.draggedCard.dataset.cardId);
+            const cardData = this.cards.get(cardId);
+            
+            let newX = mouseWorldPos.x - this.dragOffset.x;
+            let newY = mouseWorldPos.y - this.dragOffset.y;
+            
+            // Apply snapping
+            const snapped = this.applySnapping(newX, newY, cardData, new Set([cardId]));
+            newX = snapped.x;
+            newY = snapped.y;
+            
+            // Update snap indicators
+            this.updateSnapIndicators(snapped.snapLineX, snapped.snapLineY);
+            
+            // Update position immediately in DOM and data
+            this.draggedCard.style.left = `${newX}px`;
+            this.draggedCard.style.top = `${newY}px`;
+            cardData.x = newX;
+            cardData.y = newY;
+        }
     }
     
     endDragging() {
         if (this.draggedCard) {
-            this.draggedCard.classList.remove('dragging');
+            // Clear dragging state from all cards
+            if (this.multiDragOffsets.size > 0) {
+                this.selectedCards.forEach(cardId => {
+                    const element = this.world.world.querySelector(`[data-card-id="${cardId}"]`);
+                    if (element) {
+                        element.classList.remove('dragging');
+                    }
+                });
+            } else {
+                this.draggedCard.classList.remove('dragging');
+            }
+            
+            // Finish drag operation for undo/redo
+            if (window.undoRedoManager) {
+                window.undoRedoManager.finishDragOperation();
+            }
             
             // Save final position
-            const cardId = parseInt(this.draggedCard.dataset.cardId);
             if (window.storage) {
                 window.storage.saveCards(Array.from(this.cards.values()));
             }
             
             this.draggedCard = null;
+            this.multiDragOffsets.clear();
+            this.dragStartPositions.clear();
         }
         
         this.isDraggingCard = false;
         this.hideSnapIndicators();
     }
     
-    applySnapping(x, y, draggedCardData) {
+    applySnapping(x, y, draggedCardData, excludeCards) {
         let snappedX = x;
         let snappedY = y;
         let snapLineX = null;
@@ -280,7 +557,7 @@ class CardManager {
         
         // Check against all other cards
         for (const [id, cardData] of this.cards) {
-            if (id === draggedCardData.id) continue;
+            if (excludeCards.has(id)) continue;
             
             // Get actual height for snapping (auto height cards need DOM measurement)
             let cardHeight = cardData.height;
@@ -389,6 +666,7 @@ class CardManager {
     loadCards(cardsData) {
         // Clear existing cards
         this.cards.clear();
+        this.selectedCards.clear();
         this.world.world.querySelectorAll('.card').forEach(card => card.remove());
         
         // Create cards from data
@@ -402,6 +680,11 @@ class CardManager {
         const bounds = this.world.getVisibleBounds();
         const centerX = bounds.left + bounds.width / 2;
         const centerY = bounds.top + bounds.height / 2;
+        
+        // Save state before creating new card
+        if (window.undoRedoManager) {
+            window.undoRedoManager.saveState('create_card');
+        }
         
         const newCard = this.createCard({
             x: centerX - 150, // Center the 300px wide card
@@ -417,7 +700,7 @@ class CardManager {
         }
         
         // Select the new card
-        this.selectCard(newCard.id);
+        this.selectCard(newCard.id, false);
         
         return newCard;
     }

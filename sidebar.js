@@ -14,6 +14,10 @@ class Sidebar {
         this.resizeStartX = 0;
         this.resizeStartWidth = 0;
         
+        // Content change tracking for undo/redo
+        this.lastSavedContent = '';
+        this.contentChangeTimeout = null;
+        
         // DOM elements
         this.sidebar = document.getElementById('sidebar');
         this.resizeHandle = document.getElementById('sidebarResizeHandle');
@@ -102,15 +106,46 @@ class Sidebar {
             // Add custom color options to color pickers
             this.addCustomColorOptions();
             
-            // Use text-change event instead of deprecated mutation events
-            this.editor.on('text-change', () => {
-                if (this.currentCard && window.cardManager) {
+            // Track content changes for undo/redo
+            this.editor.on('text-change', (delta, oldDelta, source) => {
+                if (this.currentCard && window.cardManager && source === 'user') {
                     const content = this.editor.root.innerHTML;
+                    
+                    // Update the card immediately
                     window.cardManager.updateCard(this.currentCard.id, { content });
                     this.currentCard.content = content;
+                    
+                    // Save content state for undo/redo (debounced)
+                    this.saveContentStateDebounced();
                 }
             });
+            
+            // Track when user starts editing to capture initial state
+            this.editor.on('selection-change', (range, oldRange, source) => {
+                if (range && !oldRange && source === 'user' && this.currentCard) {
+                    // User just focused the editor, save current content as starting point
+                    this.lastSavedContent = this.currentCard.content;
+                }
+            });
+            
         }, 100);
+    }
+    
+    saveContentStateDebounced() {
+        if (this.contentChangeTimeout) {
+            clearTimeout(this.contentChangeTimeout);
+        }
+        
+        this.contentChangeTimeout = setTimeout(() => {
+            if (this.currentCard && window.undoRedoManager && this.lastSavedContent !== this.currentCard.content) {
+                window.undoRedoManager.saveContentState(
+                    this.currentCard.id,
+                    this.lastSavedContent,
+                    this.currentCard.content
+                );
+                this.lastSavedContent = this.currentCard.content;
+            }
+        }, 1000); // 1 second debounce
     }
     
     addCustomColorOptions() {
@@ -236,6 +271,13 @@ class Sidebar {
         // Duplicate button
         this.duplicateBtn.addEventListener('click', () => {
             if (this.currentCard && window.cardManager) {
+                // Save state before duplicating
+                if (window.undoRedoManager) {
+                    window.undoRedoManager.saveState('duplicate_card', {
+                        cardId: this.currentCard.id
+                    });
+                }
+                
                 window.cardManager.duplicateCard(this.currentCard.id);
             }
         });
@@ -244,6 +286,14 @@ class Sidebar {
         this.deleteBtn.addEventListener('click', () => {
             if (this.currentCard && window.cardManager && 
                 confirm('Are you sure you want to delete this card?')) {
+                
+                // Save state before deleting
+                if (window.undoRedoManager) {
+                    window.undoRedoManager.saveState('delete_cards', {
+                        cardIds: [this.currentCard.id]
+                    });
+                }
+                
                 window.cardManager.deleteCard(this.currentCard.id);
                 this.close();
             }
@@ -305,6 +355,9 @@ class Sidebar {
         this.isOpen = true;
         this.currentCard = cardData;
         
+        // Save current content as baseline for undo/redo
+        this.lastSavedContent = cardData.content;
+        
         // Update UI elements
         this.sidebar.classList.add('open');
         
@@ -320,8 +373,24 @@ class Sidebar {
     }
     
     close() {
+        // Save any pending content changes before closing
+        if (this.contentChangeTimeout) {
+            clearTimeout(this.contentChangeTimeout);
+            this.contentChangeTimeout = null;
+            
+            // Immediately save if there are pending changes
+            if (this.currentCard && window.undoRedoManager && this.lastSavedContent !== this.currentCard.content) {
+                window.undoRedoManager.saveContentState(
+                    this.currentCard.id,
+                    this.lastSavedContent,
+                    this.currentCard.content
+                );
+            }
+        }
+        
         this.isOpen = false;
         this.currentCard = null;
+        this.lastSavedContent = '';
         
         // Update UI elements
         this.sidebar.classList.remove('open');
@@ -386,6 +455,9 @@ class Sidebar {
                 if (this.editor && this.editor.root && this.editor.root.innerHTML !== updates.content) {
                     this.editor.root.innerHTML = updates.content;
                 }
+                
+                // Update the baseline content for undo/redo tracking
+                this.lastSavedContent = updates.content;
             }
         }
     }
